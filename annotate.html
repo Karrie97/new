@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>差异坐标标注工具</title>
+  <style>
+    body{font-family:system-ui,Arial; padding:16px; background:#fafbfc; color:#111}
+    h1{margin:0 0 8px}
+    .row{display:flex; gap:12px; align-items:flex-start; margin-top:12px}
+    .panel{background:#fff;padding:12px;border-radius:8px;box-shadow:0 6px 18px rgba(12,30,60,0.06)}
+    .left{flex:1; min-width:320px}
+    .right{width:320px}
+    img{max-width:100%; display:block; border:1px solid #ddd; border-radius:6px}
+    label{display:block; margin-top:8px; font-size:14px}
+    button,select,input{padding:8px 10px; border-radius:6px; border:1px solid #ccc; background:#fff}
+    .points{margin-top:8px}
+    .point{padding:6px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; gap:8px; align-items:center}
+    .controls{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap}
+    pre{background:#f6f8fb;padding:8px;border-radius:6px;overflow:auto}
+  </style>
+</head>
+<body>
+  <h1>差异坐标标注工具</h1>
+  <p>选择要标注的组（set），在右侧“被修改图”上依次点击差异点（建议 3 个），调整容差 r，然后复制下面生成的 diffs JSON 粘回 app.js。页面会加载仓库中 images 路径的图片，请确保 annotate.html 与仓库 images 路径在同一域名下（直接在浏览器打开仓库的 raw 文件可能被跨域阻止，推荐通过 GitHub Pages 或把文件放在 repo 根并用 raw.githubusercontent.com 链接）。</p>
+
+  <div class="row">
+    <div class="left panel">
+      <label>选择组（set）</label>
+      <select id="setSelect"></select>
+
+      <label>被修改图（点击标注）</label>
+      <div style="position:relative; display:inline-block; width:100%">
+        <img id="modImg" src="" alt="被修改图">
+        <div id="overlay" style="position:absolute; left:0;top:0;right:0;bottom:0;pointer-events:none"></div>
+      </div>
+
+      <div class="controls">
+        <label>容差 r (%) <input id="radiusInput" type="number" value="4" min="1" max="20" style="width:80px"> </label>
+        <button id="undoBtn">撤销最后一个</button>
+        <button id="clearBtn">清除全部</button>
+      </div>
+
+      <div style="margin-top:8px">
+        <strong>已标注点（百分比 x,y，相对于显示宽度/高度）</strong>
+        <div class="points" id="pointsList"></div>
+      </div>
+    </div>
+
+    <div class="right panel">
+      <label>生成的 diffs JSON</label>
+      <pre id="jsonOut">[]</pre>
+      <div style="margin-top:8px">
+        <button id="copyBtn">复制到剪贴板</button>
+      </div>
+
+      <label style="margin-top:12px">设置图片路径（若仓库路径不同，可在此调整）</label>
+      <div>
+        <input id="pathTemplate" value="images/set{N}/mod.jpg" style="width:100%">
+        <small>占位 {N} 会用选中组的数字替换，例如 set1 → images/set1/mod.jpg</small>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 请根据仓库中实际 set 数量和命名调整下面的 sets 数组
+    const sets = [
+      {id:'set1', label:'组 1', number:1},
+      {id:'set2', label:'组 2', number:2},
+      {id:'set3', label:'组 3', number:3}
+    ];
+
+    const setSelect = document.getElementById('setSelect');
+    const modImg = document.getElementById('modImg');
+    const overlay = document.getElementById('overlay');
+    const radiusInput = document.getElementById('radiusInput');
+    const pointsList = document.getElementById('pointsList');
+    const jsonOut = document.getElementById('jsonOut');
+    const copyBtn = document.getElementById('copyBtn');
+    const undoBtn = document.getElementById('undoBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const pathTemplate = document.getElementById('pathTemplate');
+
+    // state
+    let currentSet = sets[0];
+    let points = []; // {x,y,r}
+
+    function init(){
+      sets.forEach(s=>{
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.label;
+        setSelect.appendChild(opt);
+      });
+      setSelect.addEventListener('change', onSetChange);
+      onSetChange();
+      modImg.addEventListener('click', onImgClick);
+      copyBtn.addEventListener('click', copyJson);
+      undoBtn.addEventListener('click', undoLast);
+      clearBtn.addEventListener('click', clearAll);
+    }
+
+    function onSetChange(){
+      const id = setSelect.value;
+      currentSet = sets.find(s=>s.id===id);
+      loadImageForSet(currentSet);
+      points = [];
+      renderPoints();
+      updateJson();
+    }
+
+    function loadImageForSet(s){
+      const tpl = pathTemplate.value || 'images/set{N}/mod.jpg';
+      const path = tpl.replace('{N}', s.number);
+      modImg.src = path;
+      modImg.onload = ()=> overlay.innerHTML = '';
+    }
+
+    function onImgClick(e){
+      if(!modImg.complete) return;
+      const rect = modImg.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      const pctX = (clickX / rect.width) * 100;
+      const pctY = (clickY / rect.height) * 100;
+      const r = parseFloat(radiusInput.value) || 4;
+      const p = { x: parseFloat(pctX.toFixed(2)), y: parseFloat(pctY.toFixed(2)), r: parseFloat(r) };
+      points.push(p);
+      renderPoints();
+      drawOverlay();
+      updateJson();
+    }
+
+    function renderPoints(){
+      pointsList.innerHTML = '';
+      points.forEach((p,i)=>{
+        const el = document.createElement('div');
+        el.className = 'point';
+        el.innerHTML = '<div>#' + (i+1) + ' — x:' + p.x + ' y:' + p.y + ' r:' + p.r + '%</div><div><button data-i="'+i+'" class="removeBtn">移除</button></div>';
+        pointsList.appendChild(el);
+      });
+      pointsList.querySelectorAll('.removeBtn').forEach(btn=>{
+        btn.addEventListener('click', (ev)=>{
+          const i = parseInt(btn.getAttribute('data-i'),10);
+          points.splice(i,1);
+          renderPoints(); drawOverlay(); updateJson();
+        });
+      });
+    }
+
+    function drawOverlay(){
+      overlay.innerHTML = '';
+      if(!modImg.complete) return;
+      const rect = modImg.getBoundingClientRect();
+      const w = rect.width;
+      points.forEach(p=>{
+        const left = (p.x/100)*w;
+        const top = (p.y/100)*rect.height;
+        const radiusPx = (p.r/100)*w;
+        const el = document.createElement('div');
+        el.style.position = 'absolute';
+        el.style.left = left + 'px';
+        el.style.top = top + 'px';
+        el.style.width = (radiusPx*2) + 'px';
+        el.style.height = (radiusPx*2) + 'px';
+        el.style.border = '3px solid rgba(255,80,80,0.9)';
+        el.style.borderRadius = '50%';
+        el.style.transform = 'translate(-50%,-50%)';
+        overlay.appendChild(el);
+      });
+    }
+
+    function updateJson(){
+      jsonOut.textContent = JSON.stringify(points, null, 2);
+    }
+
+    function copyJson(){
+      navigator.clipboard.writeText(jsonOut.textContent).then(()=> {
+        alert('已复制 diffs JSON 到剪贴板，请粘回 app.js 对应 set 的 diffs 字段。示例： diffs: ' + jsonOut.textContent);
+      }).catch(()=> alert('复制失败，请手动选择并复制'));
+    }
+
+    function undoLast(){ points.pop(); renderPoints(); drawOverlay(); updateJson(); }
+    function clearAll(){ points = []; renderPoints(); drawOverlay(); updateJson(); }
+
+    init();
+  </script>
+</body>
+</html>
