@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>找不同游戏</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>找不同</h1>
+      <p class="subtitle">每组有 3 处不同，扫描二维码进入或点击开始。</p>
+    </header>
+
+    <main id="main">
+      <div id="landing" class="panel">
+        <button id="startBtn" class="btn">开始游戏</button>
+        <div class="qr-area">
+          <label>生成二维码（把部署后的 URL 填入）</label>
+          <input id="qrUrl" placeholder="https://your-hosted-site.com/" />
+          <button id="genQr" class="btn small">生成二维码</button>
+          <div id="qrcode"></div>
+          <p class="hint">也可直接用你托管后的页面生成二维码并打印</p>
+        </div>
+      </div>
+
+      <div id="game" class="panel hidden">
+        <div class="game-header">
+          <div>第 <span id="currentIdx">1</span> / <span id="totalSets">2</span> 组</div>
+          <div>已找 <span id="foundCount">0</span> / 3</div>
+          <div id="timer">00:00</div>
+        </div>
+
+        <div class="images-row">
+          <div class="image-block">
+            <div class="label">原图</div>
+            <img id="origImg" src="" alt="原图">
+          </div>
+          <div class="image-block">
+            <div class="label">被修改图（点这里找不同）</div>
+            <div class="image-wrap" id="modWrap">
+              <img id="modImg" src="" alt="被修改图">
+              <div id="overlay"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button id="nextBtn" class="btn" disabled>下一组</button>
+          <button id="restartBtn" class="btn secondary">重新开始</button>
+        </div>
+      </div>
+
+      <div id="result" class="panel hidden">
+        <h2>完成！</h2>
+        <p>总得分：<span id="score"></span> / 6</p>
+        <p>用时：<span id="totalTime"></span></p>
+        <button id="playAgain" class="btn">再玩一次</button>
+      </div>
+    </main>
+
+    <footer>
+      <small>模板：可替换 images 文件夹与 data 数组中的项以上传真实图片与坐标</small>
+    </footer>
+  </div>
+
+  <!-- QRCode.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
